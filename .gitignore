@@ -1,0 +1,14 @@
+.env
+auth.json
+.credentials.json
+*.token
+*.db
+*.sqlite
+*.log
+*_history
+__pycache__/
+.venv/
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,12 @@
+{
+  "name": "dsl-agent",
+  "description": "One plugin: an agent that speaks only DSL, and the MCP server that stores and runs the DSLs.",
+  "owner": { "name": "equwal" },
+  "plugins": [
+    {
+      "name": "dsl",
+      "source": "./",
+      "description": "Talk to Claude in DSLs. It turns your pseudocode into a grammar, writes an interpreter in the best-fit language, runs your program, and answers in code."
+    }
+  ]
+}
