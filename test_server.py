@@ -13,6 +13,7 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.server.mcpserver.exceptions import ToolError
 
 import server
 
@@ -64,8 +65,14 @@ def test_put_then_get_returns_the_same_dsl(grammar: str, ext: str, source: str) 
 @example("a/b")
 @example("")
 def test_put_rejects_a_name_that_is_not_a_slug(name: str) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ToolError):
         server.put(name, "", "py", "")
+
+
+def test_run_reports_a_timeout() -> None:
+    server.put("slow", "program <- .*", "py", "import time\ntime.sleep(30)\n")
+    with pytest.raises(ToolError, match="timed out"):
+        server.run("slow", "", timeout=0.5)
 
 
 @pytest.mark.parametrize("ext", sorted(server.RUNTIMES))
@@ -89,6 +96,11 @@ def test_put_and_run_over_stdio() -> None:
             await session.initialize()
             tools = {tool.name for tool in (await session.list_tools()).tools}
             assert tools == {"runtimes", "ls", "get", "put", "run"}
+            # Regression: mcp 2.x hides the message of every error but ToolError,
+            # so the client saw only "Error executing tool get".
+            missing = await session.call_tool("get", {"name": "nope"})
+            assert missing.is_error
+            assert "no DSL named nope" in getattr(missing.content[0], "text", "")
             dsl = {
                 "name": "upper",
                 "grammar": "text <- .*",

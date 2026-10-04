@@ -18,6 +18,10 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
+# The client sees the message of a ToolError. For any other exception it sees
+# only "Error executing tool <name>".
+from mcp.server.mcpserver.exceptions import ToolError
+
 mcp = MCPServer("dsl")
 
 NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
@@ -52,14 +56,14 @@ def table() -> dict[str, list[str]]:
 def folder(name: str) -> Path:
     # The name becomes a path segment, so reject anything that can leave home().
     if not NAME.fullmatch(name):
-        raise ValueError(f"name must match {NAME.pattern}")
+        raise ToolError(f"name must match {NAME.pattern}")
     return home() / name
 
 
 def impl(name: str) -> Path:
     found = sorted(folder(name).glob("impl.*"))
     if not found:
-        raise ValueError(f"no DSL named {name}")
+        raise ToolError(f"no DSL named {name}")
     return found[0]
 
 
@@ -95,7 +99,7 @@ def put(name: str, grammar: str, ext: str, source: str) -> str:
     with a message on stderr for a bad program.
     """
     if ext not in table():
-        raise ValueError(f"ext must be one of {sorted(table())}")
+        raise ToolError(f"ext must be one of {sorted(table())}")
     d = folder(name)
     d.mkdir(parents=True, exist_ok=True)
     new = d / f"impl.{ext}"
@@ -115,19 +119,24 @@ def run(name: str, program: str, timeout: float = 10) -> dict[str, str | int]:
     Return stdout, stderr and the exit code.
     """
     f = impl(name)
-    argv = table()[f.suffix[1:]]
+    argv = table().get(f.suffix[1:])
+    if argv is None:
+        raise ToolError(f"no runtime for {f.name}")
     exe = shutil.which(argv[0])
     if exe is None:
-        raise ValueError(f"{argv[0]} is not on PATH")
+        raise ToolError(f"{argv[0]} is not on PATH")
     # ponytail: captures all output in memory, then cuts it to LIMIT.
     # Read through a capped pipe if a DSL can flood stdout within the timeout.
-    done = subprocess.run(
-        [exe, *argv[1:], str(f)],
-        input=program.encode(),
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        done = subprocess.run(
+            [exe, *argv[1:], str(f)],
+            input=program.encode(),
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise ToolError(f"timed out after {timeout} s") from None
     return {
         "stdout": done.stdout.decode(errors="replace")[:LIMIT],
         "stderr": done.stderr.decode(errors="replace")[:LIMIT],
